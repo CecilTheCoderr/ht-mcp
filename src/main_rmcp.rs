@@ -20,6 +20,7 @@ mod mcp;
 mod ht_integration;
 mod transport;
 mod error;
+mod tunnel;
 
 use crate::mcp::server::HtMcpServer;
 

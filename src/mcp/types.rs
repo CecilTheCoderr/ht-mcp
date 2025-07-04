@@ -6,6 +6,8 @@ pub struct CreateSessionArgs {
     pub command: Option<Vec<String>>,
     #[serde(rename = "enableWebServer")]
     pub enable_web_server: Option<bool>,
+    #[serde(rename = "enableTunnel")]
+    pub enable_tunnel: Option<bool>,
 }
 
 #[derive(Debug, Serialize)]
@@ -17,6 +19,10 @@ pub struct CreateSessionResult {
     pub web_server_enabled: bool,
     #[serde(rename = "webServerUrl")]
     pub web_server_url: Option<String>,
+    #[serde(rename = "tunnelEnabled")]
+    pub tunnel_enabled: bool,
+    #[serde(rename = "tunnelUrl")]
+    pub tunnel_url: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -71,6 +77,10 @@ pub fn create_session_schema() -> Value {
             "enableWebServer": {
                 "type": "boolean",
                 "description": "Enable HT web server for live terminal preview (default: false)"
+            },
+            "enableTunnel": {
+                "type": "boolean",
+                "description": "Enable cloudflared tunnel for public access to web server (default: false)"
             }
         },
         "additionalProperties": false

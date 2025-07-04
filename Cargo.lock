@@ -591,6 +591,7 @@ dependencies = [
  "clap",
  "ht-core",
  "hyper",
+ "regex",
  "rmcp",
  "schemars",
  "serde",

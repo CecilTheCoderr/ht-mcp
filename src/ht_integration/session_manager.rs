@@ -1,5 +1,6 @@
 use crate::error::{HtMcpError, Result};
 use crate::mcp::types::*;
+use crate::tunnel::TunnelManager;
 use ht_core::{api::http, pty, pty::Winsize, session::Session};
 use std::collections::HashMap;
 use std::net::{SocketAddr, TcpListener};
@@ -7,7 +8,7 @@ use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
 use uuid::Uuid;
 
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 // Enhanced command type that supports responses
 #[derive(Debug)]
@@ -23,6 +24,7 @@ pub struct SessionInfo {
     pub internal_id: Uuid,
     pub created_at: std::time::SystemTime,
     pub web_server_url: Option<String>,
+    pub tunnel_url: Option<String>,
     pub is_alive: bool,
     pub command: Vec<String>,
     pub command_tx: Arc<mpsc::Sender<SessionCommand>>,
@@ -30,12 +32,14 @@ pub struct SessionInfo {
 
 pub struct SessionManager {
     sessions: HashMap<String, SessionInfo>,
+    tunnel_manager: TunnelManager,
 }
 
 impl SessionManager {
     pub fn new() -> Self {
         Self {
             sessions: HashMap::new(),
+            tunnel_manager: TunnelManager::new(),
         }
     }
 
@@ -43,6 +47,7 @@ impl SessionManager {
         let session_id = Uuid::new_v4().to_string();
         let command = args.command.unwrap_or_else(|| vec!["bash".to_string()]);
         let enable_web_server = args.enable_web_server.unwrap_or(false);
+        let enable_tunnel = args.enable_tunnel.unwrap_or(false);
         let internal_id = Uuid::new_v4();
 
         // Create channels for communication
@@ -58,7 +63,7 @@ impl SessionManager {
         let rows = size.ws_row as usize;
 
         // Start HTTP server if enabled - we need to clone clients_tx for the HTTP server
-        let (web_server_url, _clients_tx_for_session) = if enable_web_server {
+        let (web_server_url, tunnel_url, _clients_tx_for_session) = if enable_web_server {
             let port = self.find_available_port().await?;
             let addr = SocketAddr::from(([127, 0, 0, 1], port));
             let listener = TcpListener::bind(addr).map_err(|e| {
@@ -79,10 +84,29 @@ impl SessionManager {
                 }
             });
 
+            // Start tunnel if enabled
+            let tunnel_url = if enable_tunnel {
+                match self.tunnel_manager.create_simple_tunnel(port).await {
+                    Ok(tunnel_info) => {
+                        info!(
+                            "Tunnel created for session {}: {}",
+                            session_id, tunnel_info.url
+                        );
+                        Some(tunnel_info.url)
+                    }
+                    Err(e) => {
+                        error!("Failed to create tunnel for session {}: {}", session_id, e);
+                        None
+                    }
+                }
+            } else {
+                None
+            };
+
             info!("Started HT native webserver on {}", url);
-            (Some(url), clients_tx)
+            (Some(url), tunnel_url, clients_tx)
         } else {
-            (None, clients_tx)
+            (None, None, clients_tx)
         };
 
         // Start PTY process
@@ -167,13 +191,12 @@ impl SessionManager {
             id: session_id.clone(),
             internal_id,
             created_at: std::time::SystemTime::now(),
-            web_server_url,
+            web_server_url: web_server_url.clone(),
+            tunnel_url: tunnel_url.clone(),
             is_alive: true,
             command: command.clone(),
             command_tx: Arc::new(command_tx),
         };
-
-        let web_server_url_for_result = session_info.web_server_url.clone();
 
         self.sessions.insert(session_id.clone(), session_info);
 
@@ -181,7 +204,9 @@ impl SessionManager {
             session_id,
             message: "HT session created successfully".to_string(),
             web_server_enabled: enable_web_server,
-            web_server_url: web_server_url_for_result,
+            web_server_url,
+            tunnel_enabled: enable_tunnel,
+            tunnel_url,
         };
 
         info!("Created HT session with native webserver: {:?}", result);
@@ -310,7 +335,8 @@ impl SessionManager {
                     "createdAt": session.created_at.duration_since(std::time::UNIX_EPOCH)
                         .unwrap_or_default().as_secs(),
                     "command": session.command,
-                    "webServerUrl": session.web_server_url
+                    "webServerUrl": session.web_server_url,
+                    "tunnelUrl": session.tunnel_url
                 })
             })
             .collect();

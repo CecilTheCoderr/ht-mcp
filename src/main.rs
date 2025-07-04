@@ -16,6 +16,7 @@ mod error;
 mod ht_integration;
 mod mcp;
 mod transport;
+mod tunnel;
 
 use crate::mcp::server::HtMcpServer;
 

@@ -13,5 +13,8 @@ pub mod error;
 pub mod ht_integration;
 pub mod mcp;
 pub mod transport;
+pub mod tunnel;
+
+pub use tunnel::{TunnelConfig, TunnelInfo, TunnelManager};
 
 pub use error::{HtMcpError, Result};
